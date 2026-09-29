@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ontology Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #07090d;
+    --panel: #141922;
+    --line: #242c3a;
+    --line-soft: #1c2330;
+    --text: #e6eaf2;
+    --muted: #7d8799;
+    --dim: #4d5668;
+    --accent-bg: #25365a;
+    --accent: #7ea6ff;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; }
+
+  /* ── side panel ── */
+  #panel {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 300px; z-index: 5;
+    background: linear-gradient(180deg, rgba(24, 30, 41, 0.97), rgba(17, 21, 29, 0.97));
+    border-right: 1px solid var(--line);
+    padding: 20px 20px 16px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #2a3242 transparent;
+  }
+  .title { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+  .title span { font: 400 11px var(--mono); color: var(--dim); margin-left: 4px; }
+  .org { font: 500 11px var(--mono); color: var(--dim); letter-spacing: 0.14em; margin-top: 4px; }
+  section { margin-top: 22px; }
+  .sec-h {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font: 600 11px var(--mono); letter-spacing: 0.14em; color: var(--muted);
+    padding-bottom: 9px; border-bottom: 1px solid var(--line); margin-bottom: 12px;
+  }
+  .sec-h span:last-child { font-weight: 400; color: var(--dim); letter-spacing: 0.06em; }
+  #legend-h { cursor: pointer; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; }
+  .stat .k { font: 500 9.5px var(--mono); letter-spacing: 0.12em; color: var(--dim); }
+  .stat .v { font-size: 22px; font-weight: 600; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+
+  .proj { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 3px; cursor: pointer; color: #cfd6e2; transition: background .15s; }
+  .proj:hover { background: rgba(255, 255, 255, 0.04); }
+  .proj.on { background: var(--accent-bg); color: #fff; }
+  .proj .n { font: 500 11px var(--mono); color: var(--dim); width: 10px; }
+  .proj.on .n { color: var(--accent); }
+  .proj .name { flex: 1; font-size: 15px; }
+  .proj .kind { font: 500 10px var(--mono); letter-spacing: 0.1em; color: var(--dim); }
+
+  .cls { display: flex; align-items: center; gap: 10px; padding: 5px 2px; cursor: pointer; font-size: 14px; color: #cfd6e2; user-select: none; transition: opacity .15s; }
+  .cls:hover { color: #fff; }
+  .cls .sw { width: 12px; height: 12px; border-radius: 2px; flex: none; }
+  .cls .name { flex: 1; }
+  .cls .c { font: 400 11px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+  .cls.off { opacity: 0.32; }
+  .cls.off .name { text-decoration: line-through; }
+
+  .search { position: relative; margin-top: 16px; }
+  .search input {
+    width: 100%; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--line); border-radius: 3px;
+    color: var(--text); font: 12px var(--mono); padding: 8px 10px; outline: none;
+  }
+  .search input:focus { border-color: #3a4a6a; }
+  .search input::placeholder { color: var(--dim); }
+  #results { position: absolute; left: 0; right: 0; top: 36px; background: #121720; border: 1px solid var(--line); border-radius: 3px; z-index: 10; display: none; max-height: 280px; overflow-y: auto; }
+  #results div { display: flex; gap: 8px; align-items: center; padding: 6px 10px; font: 11.5px var(--mono); cursor: pointer; color: #cfd6e2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #results div:hover, #results div.act { background: var(--accent-bg); }
+  #results i { width: 8px; height: 8px; flex: none; border-radius: 1px; }
+
+  /* ── overlays ── */
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+  #labels > div { position: absolute; left: 0; top: 0; will-change: transform; white-space: nowrap; }
+  .clabel {
+    padding: 7px 14px 6px; border: 1px solid rgba(150, 170, 205, 0.16); background: rgba(16, 21, 30, 0.62);
+    font: 600 12.5px var(--mono); letter-spacing: 0.2em; color: #dfe6f2; text-align: center;
+  }
+  .clabel small { display: block; font-weight: 400; font-size: 10px; color: var(--muted); letter-spacing: 0.06em; margin-top: 3px; }
+  .alabel { font: 500 10px var(--mono); letter-spacing: 0.14em; color: #6f7a8e; }
+  .nlabel { display: flex; align-items: center; gap: 7px; font: 500 11.5px var(--mono); letter-spacing: 0.03em; color: #c3ccdb; text-shadow: 0 0 6px #000, 0 0 2px #000; }
+  .nlabel i { width: 9px; height: 9px; border: 1.5px solid currentColor; flex: none; box-shadow: 0 0 6px currentColor; }
+  .nlabel.big { font-size: 13.5px; font-weight: 600; color: #fff; letter-spacing: 0.05em; }
+  .nlabel.sel { color: #fff; font-weight: 600; }
+  .nlabel.sel span { background: rgba(37, 54, 90, 0.85); padding: 2px 6px; }
+
+  #hud { position: fixed; top: 18px; right: 22px; z-index: 4; text-align: right; pointer-events: none; }
+  #hud .k { font: 500 10px var(--mono); letter-spacing: 0.16em; color: var(--dim); }
+  #hud .v { font: 600 16px var(--mono); letter-spacing: 0.18em; margin-top: 4px; }
+  #hud .v span { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 8px; }
+  #hud .s { font: 400 10.5px var(--mono); color: var(--muted); margin-top: 6px; letter-spacing: 0.06em; }
+
+  #hint {
+    position: fixed; bottom: 16px; left: calc(50% + 150px); transform: translateX(-50%); z-index: 4;
+    font: 400 10.5px var(--mono); color: var(--dim); letter-spacing: 0.08em; white-space: nowrap;
+    background: rgba(12, 15, 21, 0.7); border: 1px solid var(--line-soft); padding: 7px 14px; border-radius: 3px;
+  }
+  #hint b { color: var(--muted); font-weight: 500; }
+
+  #tip {
+    position: fixed; z-index: 6; pointer-events: none; display: none;
+    background: rgba(14, 18, 26, 0.94); border: 1px solid var(--line); padding: 7px 10px; border-radius: 3px;
+    font: 11.5px var(--mono); max-width: 360px;
+  }
+  #tip .t { display: flex; align-items: center; gap: 7px; color: #fff; font-weight: 500; }
+  #tip .t i { width: 8px; height: 8px; border-radius: 1px; flex: none; }
+  #tip .m { color: var(--muted); font-size: 10.5px; margin-top: 3px; letter-spacing: 0.04em; }
+
+  #insp {
+    position: fixed; right: 18px; bottom: 60px; width: 330px; max-height: calc(100vh - 150px); overflow-y: auto; z-index: 5;
+    background: rgba(18, 23, 32, 0.95); border: 1px solid var(--line); border-radius: 4px; padding: 16px; display: none;
+    scrollbar-width: thin; scrollbar-color: #2a3242 transparent;
+  }
+  #insp .head { display: flex; align-items: center; gap: 8px; font: 500 10px var(--mono); letter-spacing: 0.14em; color: var(--muted); }
+  #insp .head i { width: 10px; height: 10px; border-radius: 2px; }
+  #insp .head .x { margin-left: auto; cursor: pointer; color: var(--dim); font-size: 14px; letter-spacing: 0; }
+  #insp .head .x:hover { color: #fff; }
+  #insp .nm { font: 600 15px var(--mono); margin-top: 8px; word-break: break-all; }
+  #insp .path { font: 400 10.5px var(--mono); color: var(--dim); margin-top: 4px; word-break: break-all; }
+  #insp .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  #insp .grid .k { font: 500 9px var(--mono); letter-spacing: 0.12em; color: var(--dim); }
+  #insp .grid .v { font: 500 13px var(--mono); margin-top: 3px; }
+  #insp .nb-h { font: 600 10px var(--mono); letter-spacing: 0.14em; color: var(--muted); margin-bottom: 6px; }
+  #insp .nb { display: flex; align-items: center; gap: 8px; padding: 4px 4px; font: 11px var(--mono); color: #c7cfdc; cursor: pointer; border-radius: 2px; }
+  #insp .nb:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
+  #insp .nb i { width: 7px; height: 7px; border-radius: 1px; flex: none; }
+  #insp .nb .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #insp .nb .r { color: var(--dim); font-size: 10px; }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font: 500 11px var(--mono); letter-spacing: 0.2em; color: var(--dim); z-index: 20; }
+
+  @media (max-width: 760px) {
+    #panel { width: 100%; top: auto; height: 38vh; border-right: 0; border-top: 1px solid var(--line); padding: 14px 16px; }
+    #hint, #insp { display: none !important; }
+    #hint { left: 50%; }
+    #hud { right: 16px; top: 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+<div id="loading">BUILDING ONTOLOGY…</div>
+
+<aside id="panel">
+  <div class="title" id="title">Ontology Atlas <span>v1</span></div>
+  <div class="org" id="org"></div>
+  <div class="search">
+    <input id="q" type="text" placeholder="/  search objects…" autocomplete="off" spellcheck="false">
+    <div id="results"></div>
+  </div>
+  <section>
+    <div class="sec-h"><span>CORPUS</span><span id="stamp"></span></div>
+    <div class="stats" id="stats"></div>
+  </section>
+  <section>
+    <div class="sec-h"><span>PROJECTION</span><span>1–5</span></div>
+    <div id="proj"></div>
+  </section>
+  <section>
+    <div class="sec-h" id="legend-h" title="Click to show all"><span>OBJECT CLASS</span><span id="ntypes"></span></div>
+    <div id="legend"></div>
+  </section>
+</aside>
+
+<div id="hud">
+  <div class="k">PROJECTION</div>
+  <div class="v" id="hud-v"></div>
+  <div class="s" id="hud-s"></div>
+</div>
+<div id="hint"><b>DRAG</b> orbit · <b>SCROLL</b> zoom · <b>RMB</b> pan · <b>1–5</b> projection · <b>SPACE</b> rotate · <b>CLICK</b> inspect · <b>ESC</b> clear</div>
+<div id="tip"></div>
+<div id="insp"></div>
+
+<script src="data.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ───────────────────────── data ─────────────────────────
+const D = window.ONTOLOGY;
+const nodes = D.nodes, links = D.edges;
+const N = nodes.length, E = links.length;
+const TAU = Math.PI * 2;
+const CLS = {};
+D.classes.forEach((c, i) => (CLS[c.id] = { ...c, idx: i }));
+const DOMS = D.domains;
+const domIdx = Object.fromEntries(DOMS.map((d, i) => [d, i]));
+
+const deg = new Float32Array(N);
+const adj = Array.from({ length: N }, () => []);
+links.forEach((e) => {
+  deg[e.s]++; deg[e.t]++;
+  adj[e.s].push({ j: e.t, type: e.type, out: true });
+  adj[e.t].push({ j: e.s, type: e.type, out: false });
+});
+const children = Array.from({ length: N }, () => []);
+nodes.forEach((n) => { if (n.parent != null && n.cls !== 'dataset') children[n.parent].push(n.id); });
+const byCls = {};
+nodes.forEach((n) => (byCls[n.cls] ||= []).push(n));
+const readers = Array.from({ length: N }, () => []);
+links.forEach((e) => { if (nodes[e.t].tier === 2 && nodes[e.s].tier === 3) readers[e.t].push(e.s); });
+let tMin = Infinity, tMax = -Infinity, maxHits = 0;
+nodes.forEach((n) => { tMin = Math.min(tMin, n.created); tMax = Math.max(tMax, n.created); maxHits = Math.max(maxHits, n.hits); });
+
+const BASE = { connector: 17, schema: 11, table: 7.5, dataset: 6.5, tql: 4.6, sql: 4.6, playbook: 6.5, dataapp: 6.5,
+  code: 3.8, document: 3.4, config: 4.5, asset: 3.8, directory: 3.2, other: 3.2 };
+const baseSize = new Float32Array(N);
+nodes.forEach((n, i) => (baseSize[i] = BASE[n.cls] * (1 + Math.log1p(deg[i]) * 0.12)));
+
+// ───────────────────────── helpers ─────────────────────────
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gauss(r) { let u = 0; while (u === 0) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * r()); }
+function randDir(r) {
+  const z = r() * 2 - 1, a = r() * TAU, s = Math.sqrt(1 - z * z);
+  return [Math.cos(a) * s, z, Math.sin(a) * s];
+}
+function fib(i, n) {
+  const y = 1 - ((i + 0.5) / n) * 2, rr = Math.sqrt(1 - y * y), th = i * 2.399963;
+  return [Math.cos(th) * rr, y, Math.sin(th) * rr];
+}
+const easeIO = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const fmtK = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n));
+const fmtB = (b) => (b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? (b / 1e3).toFixed(1) + ' KB' : b + ' B');
+const fmtD = (t) => new Date(t).toISOString().slice(0, 10);
+const topBy = (list, f, k) => list.slice().sort((a, b) => f(b) - f(a)).slice(0, k).map((n) => n.id);
+
+function alloc() {
+  const P = new Float32Array(N * 3), S = new Float32Array(baseSize), A = new Float32Array(N).fill(0.72);
+  return { P, S, A, set: (i, x, y, z) => { P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z; } };
+}
+const ellipse = (y, rx, rz, seg = 180) => Array.from({ length: seg + 1 }, (_, k) => [Math.cos((k / seg) * TAU) * rx, y, Math.sin((k / seg) * TAU) * rz]);
+
+// ───────────────────────── projections ─────────────────────────
+const PROJECTIONS = [
+  { key: 'strata', name: 'Strata', kind: 'TIERS', build: layoutStrata },
+  { key: 'domains', name: 'Domains', kind: 'RADIAL', build: layoutDomains },
+  { key: 'constellation', name: 'Constellation', kind: 'GRAPH', build: layoutConstellation },
+  { key: 'timeline', name: 'Timeline', kind: 'CARTESIAN', build: layoutTimeline },
+  { key: 'attention', name: 'Attention', kind: 'USAGE', build: layoutAttention },
+];
+
+// 1 — horizontal tiers: connectors → schemas → tables → workspace
+function layoutStrata() {
+  const r = rng(101);
+  const { P, S, A, set } = alloc();
+  const ang = new Float32Array(N);
+  const conns = byCls.connector;
+  conns.forEach((c, i) => (ang[c.id] = Math.PI * 0.5 + ((i + 0.5) / conns.length) * TAU));
+  conns.forEach((c) => {
+    const sch = children[c.id];
+    sch.forEach((s, j) => (ang[s] = ang[c.id] + (j - (sch.length - 1) / 2) * 0.2));
+  });
+  const Y = { conn: -340, schema: -200, table: -40, top: 230 };
+  conns.forEach((c) => set(c.id, Math.cos(ang[c.id]) * 210, Y.conn, Math.sin(ang[c.id]) * 90));
+  byCls.schema.forEach((s) => {
+    const a = ang[s.id];
+    set(s.id, Math.cos(a) * 400, Y.schema, Math.sin(a) * 175);
+    const tb = children[s.id];
+    const cx = Math.cos(a) * 560, cz = Math.sin(a) * 250;
+    tb.forEach((t, k) => set(t, cx + (k - (tb.length - 1) / 2) * 15 + gauss(r) * 2, Y.table + gauss(r) * 5, cz + gauss(r) * 5));
+  });
+  byCls.dataset.forEach((d) => {
+    const p = d.parent;
+    set(d.id, P[p * 3] + gauss(r) * 14, Y.table + 30 + gauss(r) * 4, P[p * 3 + 2] + gauss(r) * 10);
+  });
+
+  const counts = DOMS.map(() => 0);
+  nodes.forEach((n) => { if (n.tier === 3) counts[domIdx[n.domain]]++; });
+  const doms = DOMS.map((d, i) => {
+    const a = Math.PI * 0.5 + ((i + 0.5) / DOMS.length) * TAU + 0.25;
+    return { cx: Math.cos(a) * 520, cz: Math.sin(a) * 280, y: Y.top + (r() - 0.5) * 80, R: 7.2 * Math.sqrt(counts[i]) };
+  });
+  const SUB = { directory: 14, document: 7, other: 5, asset: 5, config: 4, code: 0, playbook: -2, dataapp: -2, tql: -9, sql: -12 };
+  nodes.forEach((n) => {
+    if (n.tier !== 3) return;
+    const d = doms[domIdx[n.domain]];
+    const rr = d.R * Math.sqrt(r()), th = r() * TAU;
+    const x = Math.round((d.cx + Math.cos(th) * rr * 1.3) / 6) * 6;
+    const z = Math.round((d.cz + Math.sin(th) * rr * 0.7) / 6) * 6;
+    set(n.id, x + gauss(r) * 0.6, d.y + SUB[n.cls] + gauss(r) * 2.5, z);
+    A[n.id] = 0.55;
+  });
+
+  const labels = DOMS.map((d, i) => ({ text: d, sub: counts[i], pos: [doms[i].cx, doms[i].y + 46, doms[i].cz] }));
+  labels.push(
+    { text: 'L3 · WORKSPACE', pos: [640, Y.top, 0], kind: 'axis' },
+    { text: 'L2 · TABLES', pos: [610, Y.table, 0], kind: 'axis' },
+    { text: 'L1 · SCHEMAS', pos: [440, Y.schema, 0], kind: 'axis' },
+    { text: 'L0 · CONNECTORS', pos: [250, Y.conn, 0], kind: 'axis' },
+  );
+  return {
+    pos: P, size: S, alpha: A, labels,
+    nodeLabels: [...conns.map((n) => n.id), ...byCls.schema.map((n) => n.id), ...topBy(byCls.table, (n) => deg[n.id], 8)],
+    cam: { pos: [0, 560, 1500], target: [0, -30, 0] }, edgeAlpha: 0.1, rotate: true,
+    guides: [ellipse(Y.conn, 210, 90), ellipse(Y.schema, 400, 175), ellipse(Y.table, 560, 250), ellipse(Y.top - 30, 620, 330)],
+  };
+}
+
+// 2 — radial sectors per domain, rings per object class
+function layoutDomains() {
+  const r = rng(202);
+  const { P, S, A, set } = alloc();
+  const RING = { connector: [50, 40], schema: [120, 55], table: [200, 80], dataset: [200, 80], tql: [300, 75], sql: [300, 75],
+    playbook: [390, 35], dataapp: [390, 35], code: [440, 90], config: [440, 90], asset: [440, 90], document: [545, 90],
+    other: [545, 90], directory: [650, 60] };
+  const TW = 0.0007; // spiral twist per unit radius
+  const counts = DOMS.map(() => 0);
+  nodes.forEach((n) => counts[domIdx[n.domain]]++);
+  const gap = 0.035, avail = TAU - gap * DOMS.length;
+  let a = -Math.PI / 2;
+  const sec = DOMS.map((d, i) => { const w = (counts[i] / N) * avail; const s = { a0: a, a1: a + w }; a += w + gap; return s; });
+  nodes.forEach((n) => {
+    const s = sec[domIdx[n.domain]], ring = RING[n.cls];
+    const rad = ring[0] + r() * ring[1];
+    const th = s.a0 + r() * (s.a1 - s.a0) + rad * TW;
+    set(n.id, Math.cos(th) * rad, gauss(r) * 6 - n.tier * 4, Math.sin(th) * rad);
+  });
+  const labels = DOMS.map((d, i) => {
+    const m = (sec[i].a0 + sec[i].a1) / 2 + 800 * TW;
+    return { text: d, sub: counts[i], pos: [Math.cos(m) * 800, 0, Math.sin(m) * 800] };
+  });
+  const guides = [50, 120, 200, 300, 390, 440, 545, 650, 715].map((rad) => ellipse(0, rad, rad, 200));
+  sec.forEach((s) => guides.push(Array.from({ length: 30 }, (_, k) => {
+    const rad = 40 + (k / 29) * 690, th = s.a0 - gap / 2 + rad * TW;
+    return [Math.cos(th) * rad, 0, Math.sin(th) * rad];
+  })));
+  return {
+    pos: P, size: S, alpha: A, labels,
+    nodeLabels: [...byCls.connector.map((n) => n.id), ...byCls.schema.map((n) => n.id)],
+    cam: { pos: [0, 1500, 980], target: [0, -20, 0] }, edgeAlpha: 0.075, rotate: true, guides,
+  };
+}
+
+// 3 — organic galaxy: domain clouds around a hot data core
+function layoutConstellation() {
+  const r = rng(303);
+  const { P, S, A, set } = alloc();
+  const centers = DOMS.map((d, i) => { const v = fib(i, DOMS.length); return [v[0] * 450, v[1] * 300, v[2] * 450]; });
+  nodes.forEach((n) => {
+    if (n.tier !== 3) return;
+    const i = n.id;
+    if (n.parent == null) { const c = centers[domIdx[n.domain]]; set(i, c[0], c[1], c[2]); return; }
+    const p = n.parent;
+    const spread = n.cls === 'directory' ? 80 / (1 + (n.depth || 1) * 0.55) : 8 + r() * 30;
+    const v = randDir(r);
+    set(i, P[p * 3] + v[0] * spread, P[p * 3 + 1] + v[1] * spread, P[p * 3 + 2] + v[2] * spread);
+  });
+  const mean = (ids, k) => {
+    const m = [0, 0, 0];
+    ids.forEach((j) => { m[0] += P[j * 3]; m[1] += P[j * 3 + 1]; m[2] += P[j * 3 + 2]; });
+    return m.map((x) => (x / ids.length) * k);
+  };
+  [...byCls.table, ...byCls.dataset].forEach((t) => {
+    const rd = readers[t.id];
+    if (rd.length) { const m = mean(rd, 0.42); set(t.id, m[0] + gauss(r) * 22, m[1] + gauss(r) * 22, m[2] + gauss(r) * 22); }
+    else { const v = randDir(r), s = 60 + r() * 110; set(t.id, v[0] * s, v[1] * s, v[2] * s); }
+  });
+  byCls.schema.forEach((s) => { const m = mean(children[s.id], 0.6); set(s.id, m[0] + gauss(r) * 10, m[1] + gauss(r) * 10, m[2] + gauss(r) * 10); });
+  byCls.connector.forEach((c) => { const m = mean(children[c.id], 0.5); set(c.id, m[0], m[1], m[2]); });
+
+  const counts = DOMS.map(() => 0);
+  nodes.forEach((n) => { if (n.tier === 3) counts[domIdx[n.domain]]++; });
+  const labels = DOMS.map((d, i) => ({ text: d, sub: counts[i], pos: centers[i].map((x) => x * 1.3) }));
+  const hubs = topBy(nodes.filter((n) => n.cls !== 'directory' && n.tier >= 2), (n) => deg[n.id], 10);
+  return {
+    pos: P, size: S, alpha: A, labels,
+    nodeLabels: [...byCls.connector.map((n) => n.id), ...hubs],
+    cam: { pos: [0, 220, 1350], target: [0, 0, 0] }, edgeAlpha: 0.12, rotate: true, guides: [],
+  };
+}
+
+// 4 — creation time × object class
+function layoutTimeline() {
+  const r = rng(404);
+  const { P, S, A, set } = alloc();
+  const ROWS = ['connector', 'schema', 'table', 'dataset', 'sql', 'tql', 'playbook', 'dataapp', 'code', 'config', 'asset', 'document', 'other', 'directory'];
+  const X = (t) => -620 + ((t - tMin) / (tMax - tMin)) * 1240;
+  const rowY = (k) => -240 + k * 37;
+  nodes.forEach((n) => set(n.id, X(n.created) + gauss(r) * 1.2, rowY(ROWS.indexOf(n.cls)) + gauss(r) * 4, gauss(r) * 26));
+  const labels = ROWS.map((c, k) => ({ text: CLS[c].name.toUpperCase(), pos: [-650, rowY(k), 0], kind: 'axis', align: 'right' }));
+  const guides = [[[-620, -272, 0], [640, -272, 0]]];
+  ROWS.forEach((c, k) => guides.push([[-620, rowY(k), -40], [620, rowY(k), -40]]));
+  const d = new Date(tMin);
+  let y = d.getUTCFullYear(), q = Math.floor(d.getUTCMonth() / 3) + 1;
+  for (;;) {
+    q++; if (q > 4) { q = 1; y++; }
+    const t = Date.UTC(y, (q - 1) * 3, 1);
+    if (t > tMax) break;
+    labels.push({ text: `Q${q} ${y}`, pos: [X(t), -292, 0], kind: 'axis' });
+    guides.push([[X(t), -278, 0], [X(t), rowY(ROWS.length - 1) + 22, -40]]);
+  }
+  return {
+    pos: P, size: S, alpha: A, labels, nodeLabels: byCls.connector.map((n) => n.id),
+    cam: { pos: [0, -10, 1380], target: [0, -5, 0] }, edgeAlpha: 0.035, rotate: false, guides,
+  };
+}
+
+// 5 — usage: hot objects in the core, dead ones on the cold shell
+function layoutAttention() {
+  const r = rng(505);
+  const { P, S, A, set } = alloc();
+  const L = Math.log1p(maxHits);
+  const radOf = (h) => 45 + Math.pow(1 - Math.log1p(h) / L, 1.35) * 560;
+  const dirs = DOMS.map((d, i) => fib(i, DOMS.length));
+  let dead = 0;
+  nodes.forEach((n) => {
+    const dd = dirs[domIdx[n.domain]], v = randDir(r);
+    let x = dd[0] * 0.9 + v[0], y = dd[1] * 0.9 + v[1], z = dd[2] * 0.9 + v[2];
+    const l = Math.hypot(x, y, z) || 1;
+    x /= l; y /= l; z /= l;
+    let rad;
+    if (n.hits === 0) {
+      dead++;
+      rad = 650 + r() * 80;
+      S[n.id] = baseSize[n.id] * 0.55;
+      A[n.id] = 0.16;
+    } else {
+      const heat = Math.log1p(n.hits) / L;
+      rad = radOf(n.hits) * (0.92 + r() * 0.16);
+      S[n.id] = baseSize[n.id] * (0.6 + heat * 1.8);
+      A[n.id] = 0.28 + 0.72 * heat;
+    }
+    set(n.id, x * rad, y * rad * 0.75, z * rad);
+  });
+  const rings = [100000, 10000, 1000, 100, 10, 1].filter((h) => h < maxHits);
+  const labels = rings.map((h, k) => { const a = -0.35 + k * 0.32; return { text: `${fmtK(h)} HITS`, pos: [Math.cos(a) * radOf(h), 0, Math.sin(a) * radOf(h)], kind: 'axis' }; });
+  labels.push({ text: 'COLD SHELL', sub: `${dead} never read`, pos: [0, 640, 0] });
+  const hot = topBy(nodes.filter((n) => n.tier >= 2 && n.cls !== 'directory'), (n) => n.hits, 14);
+  return {
+    pos: P, size: S, alpha: A, labels, nodeLabels: [...byCls.connector.map((n) => n.id), ...hot],
+    cam: { pos: [0, 520, 1850], target: [0, 20, 0] }, edgeAlpha: 0.025, rotate: true,
+    guides: rings.map((h) => ellipse(0, radOf(h), radOf(h), 200)),
+  };
+}
+
+// ───────────────────────── three.js scene ─────────────────────────
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#07090d');
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 12000);
+camera.position.set(0, 900, 3200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.55;
+controls.minDistance = 80;
+controls.maxDistance = 4500;
+controls.autoRotateSpeed = 0.35;
+
+// state arrays
+const MAXD = 0.35;
+const posA = new Float32Array(N * 3), posB = new Float32Array(N * 3);
+const sizeA = new Float32Array(N), sizeB = new Float32Array(N);
+const alphaA = new Float32Array(N), alphaB = new Float32Array(N);
+const delay = new Float32Array(N), vis = new Float32Array(N).fill(1), hiN = new Float32Array(N);
+const colN = new Float32Array(N * 3);
+{
+  const r = rng(7);
+  nodes.forEach((n, i) => {
+    delay[i] = (n.tier / 3) * 0.2 + r() * 0.15;
+    const c = new THREE.Color(CLS[n.cls].color);
+    colN[i * 3] = c.r; colN[i * 3 + 1] = c.g; colN[i * 3 + 2] = c.b;
+    const v = randDir(r), s = r() * 40;
+    posA[i * 3] = v[0] * s; posA[i * 3 + 1] = v[1] * s; posA[i * 3 + 2] = v[2] * s;
+  });
+}
+
+const nodeGeo = new THREE.BufferGeometry();
+const attr = (g, name, arr, n) => { const a = new THREE.BufferAttribute(arr, n); g.setAttribute(name, a); return a; };
+const aPos = attr(nodeGeo, 'position', posA, 3), aPosB = attr(nodeGeo, 'aPosB', posB, 3);
+const aSizeA = attr(nodeGeo, 'aSizeA', sizeA, 1), aSizeB = attr(nodeGeo, 'aSizeB', sizeB, 1);
+const aAlphaA = attr(nodeGeo, 'aAlphaA', alphaA, 1), aAlphaB = attr(nodeGeo, 'aAlphaB', alphaB, 1);
+attr(nodeGeo, 'aDelay', delay, 1); attr(nodeGeo, 'aColor', colN, 3);
+const aVis = attr(nodeGeo, 'aVis', vis, 1), aHi = attr(nodeGeo, 'aHi', hiN, 1);
+
+const MORPH = /* glsl */ `
+  uniform float uProgress;
+  float easeIO(float t) { return t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0; }
+  float morphT(float d) { return easeIO(clamp((uProgress - d) / ${(1 - MAXD).toFixed(3)}, 0.0, 1.0)); }
+  vec3 morph(vec3 a, vec3 b, float d, out float t) {
+    t = morphT(d);
+    vec3 p = mix(a, b, t);
+    p.y += sin(t * 3.14159265) * 30.0 * d;
+    return p;
+  }
+`;
+const nodeUniforms = { uProgress: { value: 0 }, uScale: { value: 1 }, uSel: { value: 0 }, uTime: { value: 0 } };
+const nodeMat = new THREE.ShaderMaterial({
+  uniforms: nodeUniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */ `
+    attribute vec3 aPosB, aColor;
+    attribute float aSizeA, aSizeB, aAlphaA, aAlphaB, aDelay, aVis, aHi;
+    uniform float uScale, uSel, uTime;
+    varying vec3 vColor; varying float vAlpha; varying float vHi;
+    ${MORPH}
+    void main() {
+      float t;
+      vec3 p = morph(position, aPosB, aDelay, t);
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      float s = mix(aSizeA, aSizeB, t);
+      float a = mix(aAlphaA, aAlphaB, t) * aVis;
+      if (uSel > 0.5) { s *= mix(0.75, 1.6, aHi); a *= mix(0.07, 1.0, aHi); }
+      a *= 0.86 + 0.14 * sin(uTime * 1.7 + aDelay * 90.0);
+      gl_PointSize = aVis < 0.01 ? 0.0 : max(1.6, s * uScale / -mv.z);
+      gl_Position = projectionMatrix * mv;
+      vColor = aColor; vAlpha = a; vHi = aHi * uSel;
+    }`,
+  fragmentShader: /* glsl */ `
+    varying vec3 vColor; varying float vAlpha; varying float vHi;
+    void main() {
+      vec2 uv = gl_PointCoord - 0.5;
+      float sq = max(abs(uv.x), abs(uv.y));
+      float core = 1.0 - smoothstep(0.15, 0.23, sq);
+      float glow = exp(-dot(uv, uv) * 22.0) * 0.38;
+      float a = (core * 0.95 + glow) * vAlpha;
+      if (a < 0.004) discard;
+      gl_FragColor = vec4(vColor * (0.55 + core * 0.8 + vHi * 0.35), a);
+    }`,
+});
+const points = new THREE.Points(nodeGeo, nodeMat);
+points.frustumCulled = false;
+scene.add(points);
+
+// edges
+const ePosA = new Float32Array(E * 6), ePosB = new Float32Array(E * 6), eCol = new Float32Array(E * 6);
+const eDelay = new Float32Array(E * 2), eVis = new Float32Array(E * 2).fill(1), eHi = new Float32Array(E * 2);
+{
+  const tint = new THREE.Color('#9fb4d8'), c = new THREE.Color();
+  links.forEach((e, k) => {
+    c.set(CLS[nodes[e.s].cls].color).lerp(tint, 0.4);
+    for (let v = 0; v < 2; v++) { eCol[k * 6 + v * 3] = c.r; eCol[k * 6 + v * 3 + 1] = c.g; eCol[k * 6 + v * 3 + 2] = c.b; }
+    eDelay[k * 2] = delay[e.s]; eDelay[k * 2 + 1] = delay[e.t];
+  });
+}
+const edgeGeo = new THREE.BufferGeometry();
+const eaPos = attr(edgeGeo, 'position', ePosA, 3), eaPosB = attr(edgeGeo, 'aPosB', ePosB, 3);
+attr(edgeGeo, 'aColor', eCol, 3); attr(edgeGeo, 'aDelay', eDelay, 1);
+const eaVis = attr(edgeGeo, 'aVis', eVis, 1), eaHi = attr(edgeGeo, 'aHi', eHi, 1);
+const edgeUniforms = { uProgress: nodeUniforms.uProgress, uAlpha: { value: 0.1 }, uSel: nodeUniforms.uSel };
+const edgeMat = new THREE.ShaderMaterial({
+  uniforms: edgeUniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */ `
+    attribute vec3 aPosB, aColor;
+    attribute float aDelay, aVis, aHi;
+    uniform float uAlpha, uSel;
+    varying vec3 vColor; varying float vA;
+    ${MORPH}
+    void main() {
+      float t;
+      vec3 p = morph(position, aPosB, aDelay, t);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      float a = uAlpha * aVis;
+      if (uSel > 0.5) a = aHi > 0.5 ? 0.8 * aVis : a * 0.12;
+      vColor = aColor; vA = a;
+    }`,
+  fragmentShader: /* glsl */ `
+    varying vec3 vColor; varying float vA;
+    void main() { gl_FragColor = vec4(vColor, vA); }`,
+});
+const lines = new THREE.LineSegments(edgeGeo, edgeMat);
+lines.frustumCulled = false;
+scene.add(lines);
+
+// background dust
+{
+  const r = rng(99), n = 1800, p = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { const v = randDir(r), s = 1500 + r() * 3000; p[i * 3] = v[0] * s; p[i * 3 + 1] = v[1] * s; p[i * 3 + 2] = v[2] * s; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: '#3a4560', size: 1.3, sizeAttenuation: false, transparent: true, opacity: 0.55 })));
+}
+
+// post-processing: bloom + chromatic smear + vignette + grain
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.62, 0.5, 0.2);
+composer.addPass(bloom);
+const lensPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uAmount: { value: 0.006 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uTime, uAmount;
+    varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main() {
+      vec2 c = vUv - 0.5;
+      vec2 off = c * uAmount * (0.3 + dot(c, c) * 3.0) + vec2(1.4 / uRes.x, 0.0);
+      vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+      float vig = smoothstep(0.95, 0.25, length(c * vec2(1.0, 1.2)));
+      col *= mix(0.5, 1.0, vig);
+      col += (hash(vUv * uRes + fract(uTime)) - 0.5) * 0.012;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+composer.addPass(lensPass);
+composer.addPass(new OutputPass());
+
+// guides per projection (lazily built)
+const guideGroups = {};
+function guidesFor(key, L) {
+  if (guideGroups[key]) return guideGroups[key];
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: '#5b76a8', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  L.guides.forEach((pts) => g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map((p) => new THREE.Vector3(...p))), mat)));
+  g.userData.mat = mat;
+  scene.add(g);
+  return (guideGroups[key] = g);
+}
+
+// ───────────────────────── morph state ─────────────────────────
+let progress = 0, current = null, currentL = null;
+const layoutCache = {};
+const getLayout = (p) => (layoutCache[p.key] ||= p.build());
+
+function tOf(i) { return easeIO(Math.min(1, Math.max(0, (progress - delay[i]) / (1 - MAXD)))); }
+function curPos(i, out) {
+  const t = tOf(i), k = i * 3;
+  return out.set(
+    posA[k] + (posB[k] - posA[k]) * t,
+    posA[k + 1] + (posB[k + 1] - posA[k + 1]) * t + Math.sin(t * Math.PI) * 30 * delay[i],
+    posA[k + 2] + (posB[k + 2] - posA[k + 2]) * t,
+  );
+}
+
+function setProjection(idx, first = false) {
+  const p = PROJECTIONS[idx];
+  if (current === p) return;
+  const L = getLayout(p);
+  if (!first) {
+    const v = new THREE.Vector3();
+    for (let i = 0; i < N; i++) {
+      const t = tOf(i);
+      curPos(i, v);
+      posA[i * 3] = v.x; posA[i * 3 + 1] = v.y; posA[i * 3 + 2] = v.z;
+      sizeA[i] = sizeA[i] + (sizeB[i] - sizeA[i]) * t;
+      alphaA[i] = alphaA[i] + (alphaB[i] - alphaA[i]) * t;
+    }
+  } else {
+    sizeA.set(L.size); alphaA.fill(0);
+  }
+  posB.set(L.pos); sizeB.set(L.size); alphaB.set(L.alpha);
+  links.forEach((e, k) => {
+    for (let c = 0; c < 3; c++) {
+      ePosA[k * 6 + c] = posA[e.s * 3 + c]; ePosA[k * 6 + 3 + c] = posA[e.t * 3 + c];
+      ePosB[k * 6 + c] = posB[e.s * 3 + c]; ePosB[k * 6 + 3 + c] = posB[e.t * 3 + c];
+    }
+  });
+  [aPos, aPosB, aSizeA, aSizeB, aAlphaA, aAlphaB, eaPos, eaPosB].forEach((a) => (a.needsUpdate = true));
+  progress = 0;
+  current = p; currentL = L;
+  guidesFor(p.key, L);
+  flyTo(L.cam.pos, L.cam.target, first ? 3.2 : 2.0);
+  buildLabels();
+  renderProjList();
+  document.getElementById('hud-v').innerHTML = `${p.name.toUpperCase()}<span>${p.kind}</span>`;
+  updateHudSub();
+}
+
+// ───────────────────────── camera ─────────────────────────
+let camAnim = null, rotating = true;
+function flyTo(pos, target, dur = 1.8) {
+  camAnim = { p0: camera.position.clone(), p1: new THREE.Vector3(...pos), t0: controls.target.clone(), t1: new THREE.Vector3(...target), t: 0, dur };
+}
+controls.addEventListener('start', () => { camAnim = null; });
+function focusNode(i) {
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  const target = posB.subarray(i * 3, i * 3 + 3);
+  flyTo([target[0] + dir.x * 460, target[1] + dir.y * 460, target[2] + dir.z * 460], [target[0], target[1], target[2]], 1.4);
+}
+
+// ───────────────────────── labels ─────────────────────────
+const labelLayer = document.getElementById('labels');
+let labelItems = [];
+function buildLabels() {
+  labelLayer.innerHTML = '';
+  labelItems = [];
+  const L = currentL;
+  L.labels.forEach((l) => {
+    const el = document.createElement('div');
+    el.className = l.kind === 'axis' ? 'alabel' : 'clabel';
+    el.innerHTML = l.sub != null ? `${l.text}<small>${l.sub}</small>` : l.text;
+    labelLayer.appendChild(el);
+    labelItems.push({ el, kind: l.kind || 'cluster', pos: new THREE.Vector3(...l.pos), align: l.align, prio: l.kind === 'axis' ? 5 : 4 });
+  });
+  const ids = new Set(L.nodeLabels);
+  if (selected >= 0) {
+    ids.add(selected);
+    adj[selected].slice().sort((a, b) => deg[b.j] - deg[a.j]).slice(0, 12).forEach((a) => ids.add(a.j));
+  }
+  ids.forEach((id) => {
+    const n = nodes[id];
+    const el = document.createElement('div');
+    const sel = id === selected;
+    el.className = 'nlabel' + (n.cls === 'connector' ? ' big' : '') + (sel ? ' sel' : '');
+    el.style.color = sel ? '#fff' : '';
+    el.innerHTML = `<i style="color:${CLS[n.cls].color}"></i><span>${n.name}</span>`;
+    labelLayer.appendChild(el);
+    labelItems.push({ el, kind: 'node', node: id, prio: sel ? 10 : n.cls === 'connector' ? 3 : n.cls === 'schema' ? 2 : 1 });
+  });
+  labelItems.forEach((it) => { it.w = it.el.offsetWidth; it.h = it.el.offsetHeight; });
+  labelItems.sort((a, b) => b.prio - a.prio);
+}
+
+const tmpV = new THREE.Vector3();
+function updateLabels(W, H) {
+  const placed = [];
+  const fade = smooth(0.55, 1, progress);
+  const hasSel = selected >= 0;
+  for (const it of labelItems) {
+    let show = true, op = 1;
+    if (it.kind === 'node') {
+      if (!vis[it.node] || (hasSel && !hiN[it.node])) show = false;
+      curPos(it.node, tmpV);
+    } else {
+      tmpV.copy(it.pos);
+      op = fade * (hasSel ? 0.35 : 1);
+      if (op < 0.02) show = false;
+    }
+    if (show) {
+      tmpV.project(camera);
+      if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.3 || Math.abs(tmpV.y) > 1.3) show = false;
+    }
+    if (show) {
+      const sx = (tmpV.x * 0.5 + 0.5) * W, sy = (-tmpV.y * 0.5 + 0.5) * H;
+      let x, y;
+      if (it.kind === 'node') { x = sx - 6; y = sy - it.h / 2; }
+      else if (it.align === 'right') { x = sx - it.w; y = sy - it.h / 2; }
+      else { x = sx - it.w / 2; y = sy - it.h / 2; }
+      const rect = [x - 3, y - 2, x + it.w + 3, y + it.h + 2];
+      if (it.prio < 10 && it.kind !== 'axis') {
+        for (const q of placed) if (rect[0] < q[2] && rect[2] > q[0] && rect[1] < q[3] && rect[3] > q[1]) { show = false; break; }
+      }
+      if (show) {
+        placed.push(rect);
+        it.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+        it.el.style.opacity = op;
+      }
+    }
+    it.el.style.visibility = show ? 'visible' : 'hidden';
+  }
+}
+
+// ───────────────────────── picking & selection ─────────────────────────
+let mouse = null, mouseDirty = false, hovered = -1, selected = -1;
+const vp = new THREE.Matrix4();
+function pick(W, H) {
+  vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const e = vp.elements;
+  let best = -1, bd = 14 * 14, bz = Infinity;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < N; i++) {
+    if (!vis[i]) continue;
+    if (selected >= 0 && !hiN[i]) continue;
+    curPos(i, v);
+    const w = e[3] * v.x + e[7] * v.y + e[11] * v.z + e[15];
+    if (w <= 0) continue;
+    const sx = ((e[0] * v.x + e[4] * v.y + e[8] * v.z + e[12]) / w * 0.5 + 0.5) * W;
+    const sy = (-(e[1] * v.x + e[5] * v.y + e[9] * v.z + e[13]) / w * 0.5 + 0.5) * H;
+    const dx = sx - mouse.x, dy = sy - mouse.y, d = dx * dx + dy * dy;
+    if (d < bd || (d < 36 && w < bz)) { bd = d; best = i; bz = w; }
+  }
+  return best;
+}
+
+function select(i, focus = false) {
+  selected = i;
+  hiN.fill(0); eHi.fill(0);
+  if (i >= 0) {
+    hiN[i] = 1;
+    adj[i].forEach((a) => (hiN[a.j] = 1));
+    links.forEach((e, k) => { if (e.s === i || e.t === i) eHi[k * 2] = eHi[k * 2 + 1] = 1; });
+  }
+  aHi.needsUpdate = eaHi.needsUpdate = true;
+  nodeUniforms.uSel.value = i >= 0 ? 1 : 0;
+  buildLabels();
+  renderInspector();
+  if (focus && i >= 0) focusNode(i);
+}
+
+const tip = document.getElementById('tip');
+function renderTip() {
+  if (hovered < 0 || !mouse) { tip.style.display = 'none'; renderer.domElement.style.cursor = ''; return; }
+  const n = nodes[hovered];
+  tip.innerHTML = `<div class="t"><i style="background:${CLS[n.cls].color}"></i>${n.name}</div>
+    <div class="m">${CLS[n.cls].name.toUpperCase()} · ${n.domain} · ${deg[hovered]} links · ${fmtK(n.hits)} hits</div>`;
+  tip.style.display = 'block';
+  const x = Math.min(mouse.x + 16, innerWidth - tip.offsetWidth - 10);
+  tip.style.left = x + 'px';
+  tip.style.top = mouse.y + 16 + 'px';
+  renderer.domElement.style.cursor = 'pointer';
+}
+
+const insp = document.getElementById('insp');
+function renderInspector() {
+  if (selected < 0) { insp.style.display = 'none'; return; }
+  const n = nodes[selected], c = CLS[n.cls];
+  const nb = adj[selected].slice().sort((a, b) => deg[b.j] - deg[a.j]);
+  const cell = (k, v) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  insp.innerHTML = `
+    <div class="head"><i style="background:${c.color}"></i>${c.name.toUpperCase()} · ${n.domain}<span class="x" title="Esc">✕</span></div>
+    <div class="nm">${n.name}</div>
+    <div class="path">${n.path.replace(/\//g, ' / ')}</div>
+    <div class="grid">
+      ${cell('LINKS', deg[selected])}${cell('HITS', fmtK(n.hits))}${cell('HITS 30D', fmtK(n.hits30))}
+      ${cell('CREATED', fmtD(n.created))}${cell(n.rows ? 'ROWS' : 'SIZE', n.rows ? fmtK(n.rows) : fmtB(n.size))}${cell('TIER', 'L' + n.tier)}
+    </div>
+    <div class="nb-h">NEIGHBORS · ${nb.length}</div>
+    ${nb.slice(0, 40).map((a) => {
+      const m = nodes[a.j];
+      return `<div class="nb" data-id="${a.j}"><i style="background:${CLS[m.cls].color}"></i><span class="n">${m.name}</span><span class="r">${a.out ? '→' : '←'} ${a.type}</span></div>`;
+    }).join('')}
+    ${nb.length > 40 ? `<div class="nb r">+ ${nb.length - 40} more</div>` : ''}`;
+  insp.style.display = 'block';
+  insp.querySelector('.x').onclick = () => select(-1);
+  insp.querySelectorAll('.nb[data-id]').forEach((el) => (el.onclick = () => select(+el.dataset.id, true)));
+}
+
+// ───────────────────────── panel ─────────────────────────
+function buildPanel() {
+  document.getElementById('title').innerHTML = `${D.name} <span>${D.version}</span>`;
+  document.getElementById('org').textContent = D.org;
+  document.getElementById('stamp').textContent = D.generatedAt.slice(0, 16).replace('T', ' ') + 'Z';
+  const files = nodes.filter((n) => n.tier === 3 && n.cls !== 'directory');
+  const vol = files.reduce((s, n) => s + n.size, 0) + byCls.dataset.reduce((s, n) => s + n.size, 0);
+  const hitRate = (files.filter((n) => n.hits30 > 0).length / files.length) * 100;
+  const stats = [
+    ['FILES', fmtK(files.length)], ['DIRECTORIES', fmtK(byCls.directory.length)],
+    ['TQL MODULES', fmtK(byCls.tql.length)], ['TABLES', fmtK(byCls.table.length)],
+    ['EDGES', fmtK(E)], ['VOLUME', (vol / 1e6).toFixed(1) + '<small>MB</small>'],
+    ['HIT RATE', hitRate.toFixed(1) + '<small>%</small>'], ['DEAD FILES', fmtK(files.filter((n) => n.hits === 0).length)],
+  ];
+  document.getElementById('stats').innerHTML = stats.map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+  document.getElementById('ntypes').textContent = `${D.classes.length} TYPES`;
+  const legend = document.getElementById('legend');
+  legend.innerHTML = D.classes.map((c) =>
+    `<div class="cls" data-c="${c.id}"><span class="sw" style="background:${c.color}"></span><span class="name">${c.name}</span><span class="c">${(byCls[c.id] || []).length}</span></div>`).join('');
+  legend.querySelectorAll('.cls').forEach((el) => {
+    el.onclick = (ev) => {
+      const id = el.dataset.c;
+      if (ev.altKey || ev.metaKey) {
+        const only = D.classes.every((c) => hidden.has(c.id) === (c.id !== id));
+        D.classes.forEach((c) => (only || c.id === id ? hidden.delete(c.id) : hidden.add(c.id)));
+      } else hidden.has(id) ? hidden.delete(id) : hidden.add(id);
+      applyVisibility();
+    };
+  });
+  document.getElementById('legend-h').onclick = () => { hidden.clear(); applyVisibility(); };
+}
+
+const hidden = new Set();
+function applyVisibility() {
+  nodes.forEach((n, i) => (vis[i] = hidden.has(n.cls) ? 0 : 1));
+  links.forEach((e, k) => (eVis[k * 2] = eVis[k * 2 + 1] = vis[e.s] && vis[e.t] ? 1 : 0));
+  aVis.needsUpdate = eaVis.needsUpdate = true;
+  document.querySelectorAll('#legend .cls').forEach((el) => el.classList.toggle('off', hidden.has(el.dataset.c)));
+  updateHudSub();
+}
+
+function renderProjList() {
+  const el = document.getElementById('proj');
+  el.innerHTML = PROJECTIONS.map((p, i) =>
+    `<div class="proj${p === current ? ' on' : ''}" data-i="${i}"><span class="n">${i + 1}</span><span class="name">${p.name}</span><span class="kind">${p.kind}</span></div>`).join('');
+  el.querySelectorAll('.proj').forEach((d) => (d.onclick = () => setProjection(+d.dataset.i)));
+}
+
+function updateHudSub() {
+  const nv = vis.reduce((s, v) => s + v, 0), ev = eVis.reduce((s, v) => s + v, 0) / 2;
+  const rot = rotating && currentL?.rotate ? 'ROTATING' : 'STILL';
+  document.getElementById('hud-s').textContent = `${nv.toLocaleString('en')} NODES · ${ev.toLocaleString('en')} EDGES · ${rot}`;
+}
+
+// search
+const q = document.getElementById('q'), results = document.getElementById('results');
+let hits = [], act = 0;
+function renderResults() {
+  results.innerHTML = hits.map((i, k) =>
+    `<div class="${k === act ? 'act' : ''}" data-id="${i}"><i style="background:${CLS[nodes[i].cls].color}"></i>${nodes[i].name}</div>`).join('');
+  results.style.display = hits.length ? 'block' : 'none';
+  results.querySelectorAll('div').forEach((d) => (d.onmousedown = (ev) => { ev.preventDefault(); choose(+d.dataset.id); }));
+}
+function choose(i) { select(i, true); q.value = ''; hits = []; renderResults(); q.blur(); }
+q.addEventListener('input', () => {
+  const s = q.value.trim().toLowerCase();
+  hits = s ? nodes.filter((n) => n.name.toLowerCase().includes(s) || n.path.toLowerCase().includes(s))
+    .sort((a, b) => deg[b.id] - deg[a.id]).slice(0, 12).map((n) => n.id) : [];
+  act = 0; renderResults();
+});
+q.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { act = Math.min(act + 1, hits.length - 1); renderResults(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { act = Math.max(act - 1, 0); renderResults(); e.preventDefault(); }
+  else if (e.key === 'Enter' && hits.length) choose(hits[act]);
+  else if (e.key === 'Escape') { q.value = ''; hits = []; renderResults(); q.blur(); }
+});
+q.addEventListener('blur', () => setTimeout(() => (results.style.display = 'none'), 100));
+
+// ───────────────────────── input ─────────────────────────
+const cv = renderer.domElement;
+let down = null;
+cv.addEventListener('pointermove', (e) => { mouse = { x: e.clientX, y: e.clientY }; mouseDirty = true; });
+cv.addEventListener('pointerleave', () => { mouse = null; hovered = -1; renderTip(); });
+cv.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY, b: e.button }));
+cv.addEventListener('pointerup', (e) => {
+  if (!down || down.b !== 0) return;
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  down = null;
+  if (moved > 5) return;
+  if (hovered >= 0) select(hovered === selected ? -1 : hovered);
+  else if (selected >= 0) select(-1);
+});
+cv.addEventListener('dblclick', () => { if (hovered >= 0) select(hovered, true); });
+addEventListener('keydown', (e) => {
+  if (e.target === q) return;
+  if (e.key >= '1' && e.key <= '5') setProjection(+e.key - 1);
+  else if (e.key === ' ') { rotating = !rotating; updateHudSub(); e.preventDefault(); }
+  else if (e.key === 'Escape') select(-1);
+  else if (e.key === '/') { q.focus(); e.preventDefault(); }
+});
+
+// ───────────────────────── loop ─────────────────────────
+let W = innerWidth, H = innerHeight, panelW = 300;
+function resize() {
+  W = innerWidth; H = innerHeight;
+  panelW = W > 760 ? 300 : 0;
+  renderer.setSize(W, H);
+  composer.setSize(W, H);
+  camera.aspect = W / H;
+  camera.setViewOffset(W, H, -panelW / 2, W > 760 ? 0 : H * 0.17, W, H);
+  camera.updateProjectionMatrix();
+  nodeUniforms.uScale.value = (H * renderer.getPixelRatio()) / (2 * Math.tan((camera.fov * Math.PI) / 360));
+  lensPass.uniforms.uRes.value.set(W * renderer.getPixelRatio(), H * renderer.getPixelRatio());
+}
+addEventListener('resize', resize);
+
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const time = clock.elapsedTime;
+  if (progress < 1) { progress = Math.min(1, progress + dt / 2.2); nodeUniforms.uProgress.value = progress; }
+  nodeUniforms.uTime.value = time;
+  lensPass.uniforms.uTime.value = time;
+
+  if (camAnim) {
+    camAnim.t += dt / camAnim.dur;
+    const e = easeIO(Math.min(1, camAnim.t));
+    camera.position.lerpVectors(camAnim.p0, camAnim.p1, e);
+    controls.target.lerpVectors(camAnim.t0, camAnim.t1, e);
+    if (camAnim.t >= 1) camAnim = null;
+  }
+  controls.autoRotate = rotating && !!currentL?.rotate && !camAnim && selected < 0;
+  controls.update();
+
+  if (currentL) edgeUniforms.uAlpha.value += (currentL.edgeAlpha - edgeUniforms.uAlpha.value) * Math.min(1, dt * 3);
+  for (const k in guideGroups) {
+    const m = guideGroups[k].userData.mat;
+    const target = current?.key === k ? 0.14 * smooth(0.3, 1, progress) : 0;
+    m.opacity += (target - m.opacity) * Math.min(1, dt * 4);
+    guideGroups[k].visible = m.opacity > 0.003;
+  }
+
+  if (mouse && (mouseDirty || progress < 1 || controls.autoRotate) && !down) {
+    const h = pick(W, H);
+    if (h !== hovered) hovered = h;
+    renderTip();
+    mouseDirty = false;
+  }
+  updateLabels(W, H);
+  composer.render();
+  requestAnimationFrame(frame);
+}
+
+buildPanel();
+resize();
+// ?view=1..5 picks the start projection; &instant skips the intro animation
+const params = new URLSearchParams(location.search);
+setProjection(Math.min(4, Math.max(0, (+params.get('view') || 1) - 1)), true);
+if (params.has('instant')) {
+  progress = 1; nodeUniforms.uProgress.value = 1; camAnim = null;
+  camera.position.set(...currentL.cam.pos); controls.target.set(...currentL.cam.target);
+}
+document.getElementById('loading').remove();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
